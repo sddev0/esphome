@@ -39,7 +39,7 @@
  *
  * The payload structure is as follows: [0x00, 0x0A] (gate), followed by
  * one of the states normally carried in status replies: (0x0) Pause, (0x1)
- * Close, (0x2) Ventilate (open ~20%), (0x3) Open/high-torque reverse. The
+ * Close/Soft stop, (0x2) Ventilate (open ~10%), (0x3) Open/high-torque reverse. The
  * protocol implementation in this file simply reuses the GateStatus enum
  * for this purpose.
  */

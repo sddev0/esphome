@@ -62,7 +62,7 @@ void Tormatic::loop() {
 
 void Tormatic::control(const cover::CoverCall &call) {
   if (call.get_stop()) {
-    this->send_gate_command_(PAUSED);
+    this->send_gate_command_(CLOSED);
     return;
   }
 
@@ -244,7 +244,7 @@ void Tormatic::stop_at_target_() {
     return;
   }
 
-  this->send_gate_command_(PAUSED);
+  this->send_gate_command_(CLOSED);
   this->target_position_.reset();
 }
 
