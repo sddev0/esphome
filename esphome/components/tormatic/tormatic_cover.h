@@ -39,19 +39,18 @@ class Tormatic : public cover::Cover, public uart::UARTDevice, public PollingCom
   void request_gate_status_();
   optional<GateStatus> read_gate_status_();
 
-  void send_gate_command_(GateStatus s);
+  void send_gate_command_(GateCommand cmd);
   void handle_gate_status_(GateStatus s);
 
   uint32_t seq_tx_{0};
 
-  GateStatus current_status_{PAUSED};
+  GateStatus current_status_{GateStatus::HALTED};
 
   uint32_t open_duration_{0};
   uint32_t close_duration_{0};
   uint32_t last_publish_time_{0};
   uint32_t last_recompute_time_{0};
   uint32_t direction_start_time_{0};
-  GateStatus next_command_{OPENED};
   optional<float> target_position_{};
 };
 

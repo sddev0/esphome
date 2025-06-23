@@ -62,7 +62,7 @@ void Tormatic::loop() {
 
 void Tormatic::control(const cover::CoverCall &call) {
   if (call.get_stop()) {
-    this->send_gate_command_(CLOSED);
+    this->send_gate_command_(GateCommand::STOP);
     return;
   }
 
@@ -95,33 +95,34 @@ void Tormatic::recalibrate_duration_(GateStatus s) {
   auto now = millis();
   auto old = this->current_status_;
 
-  // Gate paused halfway through opening or closing, invalidate the start time
+  // Gate halted halfway through opening or closing, invalidate the start time
   // of the current operation. Close/open durations can only be accurately
   // calibrated on full open or close cycle due to motor acceleration.
-  if (s == PAUSED) {
-    ESP_LOGD(TAG, "Gate paused, clearing direction start time");
+  if (s == GateStatus::HALTED) {
+    ESP_LOGD(TAG, "Gate halted, clearing direction start time");
     this->direction_start_time_ = 0;
     return;
   }
 
   // Record the start time of a state transition if the gate was in the fully
   // open or closed position before the command.
-  if ((old == CLOSED && s == OPENING) || (old == OPENED && s == CLOSING)) {
+  if ((old == GateStatus::CLOSED && s == GateStatus::OPENING) ||
+      (old == GateStatus::OPENED && s == GateStatus::CLOSING)) {
     ESP_LOGD(TAG, "Gate started moving from fully open or closed state");
     this->direction_start_time_ = now;
     return;
   }
 
-  // The gate was resumed from a paused state, don't attempt recalibration.
+  // The gate was resumed from a halted state, don't attempt recalibration.
   if (this->direction_start_time_ == 0) {
     return;
   }
 
-  if (s == OPENED) {
+  if (s == GateStatus::OPENED) {
     this->open_duration_ = now - this->direction_start_time_;
     ESP_LOGI(TAG, "Recalibrated the gate's open duration to %dms", this->open_duration_);
   }
-  if (s == CLOSED) {
+  if (s == GateStatus::CLOSED) {
     this->close_duration_ = now - this->direction_start_time_;
     ESP_LOGI(TAG, "Recalibrated the gate's close duration to %dms", this->close_duration_);
   }
@@ -139,15 +140,15 @@ void Tormatic::handle_gate_status_(GateStatus s) {
   ESP_LOGI(TAG, "Status changed from %s to %s", gate_status_to_str(this->current_status_), gate_status_to_str(s));
 
   switch (s) {
-    case OPENED:
+    case GateStatus::OPENED:
       // The Novoferm 423 doesn't respond to the first 'Close' command after
-      // being opened completely. Sending a pause command after opening fixes
+      // being opened completely. Sending a stop command after opening fixes
       // that.
-      this->send_gate_command_(PAUSED);
+      this->send_gate_command_(GateCommand::EMERGENCY_STOP);
 
       this->position = COVER_OPEN;
       break;
-    case CLOSED:
+    case GateStatus::CLOSED:
       this->position = COVER_CLOSED;
       break;
     default:
@@ -199,12 +200,12 @@ void Tormatic::control_position_(float target) {
 
   if (target == COVER_OPEN) {
     ESP_LOGI(TAG, "Fully opening gate");
-    this->send_gate_command_(OPENED);
+    this->send_gate_command_(GateCommand::OPEN);
     return;
   }
   if (target == COVER_CLOSED) {
     ESP_LOGI(TAG, "Fully closing gate");
-    this->send_gate_command_(CLOSED);
+    this->send_gate_command_(GateCommand::CLOSE);
     return;
   }
 
@@ -214,13 +215,13 @@ void Tormatic::control_position_(float target) {
 
   if (target > this->position) {
     ESP_LOGI(TAG, "Opening gate towards %.1f", target);
-    this->send_gate_command_(OPENED);
+    this->send_gate_command_(GateCommand::OPEN);
     return;
   }
 
   if (target < this->position) {
     ESP_LOGI(TAG, "Closing gate towards %.1f", target);
-    this->send_gate_command_(CLOSED);
+    this->send_gate_command_(GateCommand::CLOSE);
     return;
   }
 }
@@ -244,7 +245,7 @@ void Tormatic::stop_at_target_() {
     return;
   }
 
-  this->send_gate_command_(CLOSED);
+  this->send_gate_command_(GateCommand::STOP);
   this->target_position_.reset();
 }
 
@@ -276,7 +277,7 @@ optional<GateStatus> Tormatic::read_gate_status_() {
       }
       auto status = o_status.value();
 
-      return status.state;
+      return status.status;
     }
 
     case COMMAND:
@@ -308,9 +309,9 @@ void Tormatic::request_gate_status_() {
 }
 
 // Send a message to the unit issuing a command.
-void Tormatic::send_gate_command_(GateStatus s) {
-  ESP_LOGI(TAG, "Sending gate command %s", gate_status_to_str(s));
-  CommandRequestReply req(s);
+void Tormatic::send_gate_command_(GateCommand cmd) {
+  ESP_LOGI(TAG, "Sending gate command %s", gate_command_to_str(cmd));
+  CommandRequest req(cmd);
   this->send_message_(COMMAND, req);
 }
 

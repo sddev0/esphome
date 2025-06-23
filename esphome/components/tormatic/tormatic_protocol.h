@@ -22,7 +22,7 @@
  * relevant for an esphome cover component.
  *
  * The second byte of the reply is set to 0x03 when the gate is in fully open
- * position. Other valid values for the second byte are: (0x0) Paused, (0x1)
+ * position. Other valid values for the second byte are: (0x0) Halted, (0x1)
  * Closed, (0x2) Ventilating, (0x3) Opened, (0x4) Opening, (0x5) Closing. The
  * meaning of the other bytes is currently unknown and ignored by the component.
  *
@@ -38,10 +38,7 @@
  * ignoring the echoed messages.
  *
  * The payload structure is as follows: [0x00, 0x0A] (gate), followed by
- * one of the states normally carried in status replies: (0x0) Pause, (0x1)
- * Close/Soft stop, (0x2) Ventilate (open ~10%), (0x3) Open/high-torque reverse. The
- * protocol implementation in this file simply reuses the GateStatus enum
- * for this purpose.
+ * one of the commands: (0x0) Emergency Stop, (0x1) Stop/Close, (0x2) Ventilate, (0x3) Open/High-torque reverse.
  */
 
 namespace esphome {
@@ -105,49 +102,73 @@ enum StatusType : uint16_t {
   UNKNOWN = 0x0B,
 };
 
-// GateStatus defines the current state of the gate, received in a StatusReply
-// and sent in a Command.
-enum GateStatus : uint8_t {
-  PAUSED,
-  CLOSED,
-  VENTILATING,
-  OPENED,
-  OPENING,
-  CLOSING,
+// GateCommand defines the commands that can be sent to the gate
+enum class GateCommand : uint8_t {
+  EMERGENCY_STOP = 0x0,    // Sofortiger, ungebremster Not-Aus
+  STOP = 0x1,              // Normales, kontrolliertes Anhalten (auch für Schließen, je nach Status)
+  CLOSE = 0x1,             // Alias für STOP, wenn gestoppt
+  VENTILATE = 0x2,         // Lüftungsposition
+  OPEN = 0x3,              // Normales Öffnen
+  HIGHTORQUEREVERSE = 0x3  // Alias für OPEN, Notfall-Öffnen
 };
 
-inline CoverOperation gate_status_to_cover_operation(GateStatus s) {
-  switch (s) {
-    case OPENING:
-      return COVER_OPERATION_OPENING;
-    case CLOSING:
-      return COVER_OPERATION_CLOSING;
-    case OPENED:
-    case CLOSED:
-    case PAUSED:
-    case VENTILATING:
-      return COVER_OPERATION_IDLE;
+// GateStatus defines the current state of the gate, received in a StatusReply
+enum class GateStatus : uint8_t {
+  HALTED = 0x0,  // Angehalten, aber nicht an Endposition (weder offen noch geschlossen)
+  CLOSED = 0x1,
+  VENTILATING = 0x2,
+  OPENED = 0x3,
+  OPENING = 0x4,
+  CLOSING = 0x5,
+};
+
+inline const char *gate_command_to_str(GateCommand cmd) {
+  switch (cmd) {
+    case GateCommand::EMERGENCY_STOP:
+      return "Emergency Stop";
+    case GateCommand::STOP:  // CLOSE ist ein Alias für STOP
+      return "Stop/Close";
+    case GateCommand::VENTILATE:
+      return "Ventilate";
+    case GateCommand::OPEN:  // HIGHTORQUEREVERSE ist ein Alias für OPEN
+      return "Open/High Torque Reverse";
+    default:
+      return "Unknown";
   }
-  return COVER_OPERATION_IDLE;
 }
 
-inline const char *gate_status_to_str(GateStatus s) {
-  switch (s) {
-    case PAUSED:
-      return "Paused";
-    case CLOSED:
+inline const char *gate_status_to_str(GateStatus status) {
+  switch (status) {
+    case GateStatus::HALTED:
+      return "Halted";
+    case GateStatus::CLOSED:
       return "Closed";
-    case VENTILATING:
+    case GateStatus::VENTILATING:
       return "Ventilating";
-    case OPENED:
+    case GateStatus::OPENED:
       return "Opened";
-    case OPENING:
+    case GateStatus::OPENING:
       return "Opening";
-    case CLOSING:
+    case GateStatus::CLOSING:
       return "Closing";
     default:
       return "Unknown";
   }
+}
+
+inline CoverOperation gate_status_to_cover_operation(GateStatus status) {
+  switch (status) {
+    case GateStatus::OPENING:
+      return COVER_OPERATION_OPENING;
+    case GateStatus::CLOSING:
+      return COVER_OPERATION_CLOSING;
+    case GateStatus::OPENED:
+    case GateStatus::CLOSED:
+    case GateStatus::HALTED:
+    case GateStatus::VENTILATING:
+      return COVER_OPERATION_IDLE;
+  }
+  return COVER_OPERATION_IDLE;
 }
 
 // A StatusRequest is sent to request the gate's current status.
@@ -167,10 +188,10 @@ struct StatusRequest {
 // StatusReply is received from the unit in response to a StatusRequest.
 struct StatusReply {
   uint8_t ack = 0x2;
-  GateStatus state;
+  GateStatus status;  // statt GateStatus state
   uint8_t trailer = 0x0;
 
-  std::string print() { return str_sprintf("StatusReply: state %s", gate_status_to_str(this->state)); }
+  std::string print() { return str_sprintf("StatusReply: status %s", gate_status_to_str(this->status)); }
 
   void byteswap(){};
 } __attribute__((packed));
@@ -186,23 +207,23 @@ template<typename T> std::vector<uint8_t> serialize(T obj) {
   return out;
 }
 
-// Command tells the gate to start or stop moving.
+// CommandRequest tells the gate to start or stop moving.
 // It is echoed back by the unit on success.
-struct CommandRequestReply {
+struct CommandRequest {
   // The part of the unit to control. For now only the gate is supported.
   StatusType type = GATE;
   uint8_t pad = 0x0;
-  // The desired state:
-  // PAUSED = stop
-  // VENTILATING = move to ~20% open
-  // CLOSED = close
-  // OPENED = open/high-torque reverse when closing
-  GateStatus state;
+  // The desired command:
+  // EMERGENCY_STOP = ungebremster Not-Aus
+  // STOP = normales Anhalten (auch für Schließen, je nach Status)
+  // VENTILATE = Lüftungsposition
+  // OPEN = Öffnen (normal) oder HighTorqueReverse (Notfall)
+  GateCommand command;  // statt GateStatus state
 
-  CommandRequestReply() = default;
-  CommandRequestReply(GateStatus state) { this->state = state; }
+  CommandRequest() = default;
+  CommandRequest(GateCommand command) { this->command = command; }
 
-  std::string print() { return str_sprintf("CommandRequestReply: state %s", gate_status_to_str(this->state)); }
+  std::string print() { return str_sprintf("CommandRequest: command %s", gate_command_to_str(this->command)); }
 
   void byteswap() { this->type = convert_big_endian(this->type); }
 } __attribute__((packed));
