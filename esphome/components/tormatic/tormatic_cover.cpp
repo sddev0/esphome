@@ -12,6 +12,7 @@ static const char *const TAG = "tormatic.cover";
 using namespace esphome::cover;
 
 void Tormatic::setup() {
+  ESP_LOGD("tormatic", "Starte CUSTOM Version von sddev0");
   auto restore = this->restore_state_();
   if (restore.has_value()) {
     restore->apply(this);
