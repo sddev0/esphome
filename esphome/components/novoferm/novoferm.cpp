@@ -218,6 +218,8 @@ void Novoferm::process_command_queue_() {
   if (waitingForReply && (now - last_command_timestamp_ >= COMMAND_REPLY_TIMEOUT)) {
     ESP_LOGW(TAG, "Timeout waiting for valid reply to last command");
     rx_buffer_pos_ = 0;
+    last_command_timestamp_ = 0;
+    last_full_reply_timestamp_ = 0;
   }
 
   if (command_queue_.empty() || waitingForReply) {
