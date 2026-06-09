@@ -1,0 +1,32 @@
+novoferm:
+  id: novoferm_hub
+  uart_id: uart_bus
+
+cover:
+  - platform: novoferm
+    novoferm_id: novoferm_hub
+    id: novoferm_gate
+    name: Garage Gate
+    open_duration: 15s
+    close_duration: 22s
+    learn_cycle_times: true
+
+light:
+  - platform: novoferm
+    novoferm_id: novoferm_hub
+    name: Garage Light
+
+binary_sensor:
+  - platform: novoferm
+    novoferm_id: novoferm_hub
+    name: Garage Ventilation Active
+
+interval:
+  - interval: 60s
+    then:
+      - novoferm.cover.ventilate:
+          id: novoferm_gate
+      - delay: 10s
+      - novoferm.cover.ventilate:
+          id: novoferm_gate
+          stop: true
