@@ -26,7 +26,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_LEARN_CYCLE_TIMES, default=True): cv.boolean,
         }
     )
-    .extend(cv.polling_component_schema("300ms"))
+    .extend(cv.polling_component_schema("1s"))
 )
 
 
